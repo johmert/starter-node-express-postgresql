@@ -1,6 +1,7 @@
 const suppliersService = require("./suppliers.service.js");
 const hasProperties = require("../errors/hasProperties");
 const hasRequiredProperties = hasProperties("supplier_name", "supplier_email");
+const asyncErrorBoundary = require("../errors/asyncErrorBoundary");
 
 const VALID_PROPERTIES = [
   "supplier_name",
@@ -15,18 +16,15 @@ const VALID_PROPERTIES = [
   "supplier_type_of_goods",
 ];
 
-function create(req, res, next) {
-  suppliersService
-    .create(req.body.data)
-    .then((data) => res.status(201).json({ data }))
-    .catch(next);
+async function create(req, res) {
+  const data = await suppliersService.create(req.body.data);
+  res.status(201).json({ data });
 }
 
-function destroy(req, res, next) {
-  suppliersService
-    .delete(res.locals.supplier.supplier_id)
-    .then(() => res.sendStatus(204))
-    .catch(next);
+async function destroy(req, res) {
+  const { supplier } = res.locals;
+  await suppliersService.delete(supplier.supplier_id);
+  res.sendStatus(204);
 }
 
 function hasOnlyValidProperties(req, res, next) {
@@ -45,32 +43,26 @@ function hasOnlyValidProperties(req, res, next) {
   next();
 }
 
-function supplierExists(req, res, next) {
-  suppliersService 
-    .read(req.params.supplierId)
-    .then(supplier => {
-      if(supplier) {
-        res.locals.supplier = supplier;
-        return next();
-      }
-      next({ status: 404, message: `Supplier cannot be found.` })
-    })
-    .catch(next);
+async function supplierExists(req, res, next) {
+  const supplier = await suppliersService.read(req.params.supplierId);
+  if(supplier) {
+    res.locals.supplier = supplier;
+    return next();
+  }
+  next({ status: 404, message: `Supplier cannot be found.` });
 }
 
-function update(req, res, next) {
+async function update(req, res, next) {
   const updatedSupplier = {
     ...req.body.data,
     supplier_id: res.locals.supplier.supplier_id,
   };
-  suppliersService
-    .update(updatedSupplier)
-    .then(data => res.json({ data }))
-    .catch(next);
+  const data = await suppliersService.update(updatedSupplier);
+  res.json({ data });
 }
 
 module.exports = {
-  create: [hasOnlyValidProperties, hasRequiredProperties, create],
-  delete: [supplierExists, destroy],
-  update: [supplierExists, hasOnlyValidProperties, hasRequiredProperties, update],
+  create: [hasOnlyValidProperties, hasRequiredProperties, asyncErrorBoundary(create)],
+  delete: [asyncErrorBoundary(supplierExists), asyncErrorBoundary(destroy)],
+  update: [asyncErrorBoundary(supplierExists), hasOnlyValidProperties, hasRequiredProperties, asyncErrorBoundary(update)],
 };
